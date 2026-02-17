@@ -1,0 +1,13 @@
+# Changes here will be overwritten by Copier
+_commit: 0.14.2
+_src_path: gh:bhklab/bhklab-project-template
+author_email: julianguyen.bhklab@gmail.com
+author_full_name: Julia Nguyen
+github_username: julianguyn
+has_additional_authors: false
+project_description: Pipeline for processing SOLID methylation data
+project_name: SOLID Methylation Pipeline
+project_slug: solid-methylation-pipeline
+publish_to_github: true
+python_version: '3.12'
+repo_location: julianguyn
