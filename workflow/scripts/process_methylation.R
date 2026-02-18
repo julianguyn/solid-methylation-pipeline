@@ -13,6 +13,23 @@ suppressPackageStartupMessages({
     library(ggpubr)
 })
 
+
+# ---------------------------------------------------------
+# Make directories
+# ---------------------------------------------------------
+
+outdirs <- c(
+    "data/results/figures/normalization",
+    "data/results/figures/qc",
+    "data/results/data"
+)
+
+for (dir in outdirs) {
+    if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE)
+    }
+}
+
 ###########################################################
 # Load in data
 ###########################################################
@@ -91,16 +108,16 @@ compare_norm <- function(RGSet, label) {
     p12 <- plotQC(getQC(GRSet.noob))
 
     filename <- paste0("data/results/figures/normalization/", label, ".png")
-    png(filename, width = 8, height = 12, res = 600, units = "in")
+    png(filename, width = 12, height = 6, res = 600, units = "in")
     print({
-        par(mfrow = c(4, 2))
+        par(mfrow = c(2, 4))
         densityPlot(MSet.raw, main = "Raw", legend = FALSE)
-        plotQC(getQC(MSet.raw))
         densityPlot(MSet.illumina, main = "Illumina", legend = FALSE)
-        plotQC(getQC(MSet.illumina))
         densityPlot(MSet.swan, main = "SWAN", legend = FALSE)
-        plotQC(getQC(MSet.swan))
         densityPlot(GRSet.noob, main = "Noob", legend = FALSE)
+        plotQC(getQC(MSet.raw))
+        plotQC(getQC(MSet.illumina))
+        plotQC(getQC(MSet.swan))
         plotQC(getQC(GRSet.noob))
     })
     dev.off()
@@ -124,7 +141,7 @@ pal <- ifelse(
     "#7C0B2B",
     ifelse(
         names(toPlot) %in% names(colMeans(detPv1)),
-        "#545E56", "#917C78")
+        "#545E56", "#AA9995")
 )
 names(toPlot) <- gsub("_.*", "", names(toPlot))
 names(pal) <- gsub("_.*", "", names(pal))
@@ -137,7 +154,7 @@ barplot(toPlot, las=2, cex.names=0.8,
 abline(h=0.01, col="#7C0B2B", lty=2)
 legend("topright", 
        legend = c("EPICv1", "EPICv2", "Failed (detP > 0.01)"),
-       fill = c("#545E56", "#917C78", "#7C0B2B"),
+       fill = c("#545E56", "#AA9995", "#7C0B2B"),
        bty = "n")
 dev.off()
 
@@ -149,6 +166,9 @@ probe_failure_rate <- 0.1
 # get failed samples
 failed_samples_v1 <- colMeans(detPv1 > detP_threshold, na.rm = TRUE) > sample_failure_rate
 failed_samples_v2 <- colMeans(detPv2 > detP_threshold, na.rm = TRUE) > sample_failure_rate
+
+cat("Number of failed samples:", sum(failed_samples_v1, failed_samples_v2), "\n")
+cat("Failed sample:", names(failed_samples_v2[which(failed_samples_v2 == TRUE)]), "\n")
 
 # remove failed samples
 rgSet_EPICv1 <- rgSet_EPICv1[,!failed_samples_v1]
@@ -173,6 +193,8 @@ GRSetv2 <- ratioConvert(mapToGenome(MSetv2))
 # helper function to remove failed probes
 remove_failed_probes <- function(detP, GRSet) {
 
+    cat("Starting with", nrow(GRSet), "probes\n")
+
     # get failed probes
     failed_probes <- rowMeans(detPv1 > detP_threshold, na.rm = TRUE) > probe_failure_rate
     common_probes <- intersect(rownames(GRSet), names(failed_probes))
@@ -180,7 +202,7 @@ remove_failed_probes <- function(detP, GRSet) {
     # remove failed probes
     to_remove <- failed_probes[common_probes]
     if (length(to_remove) > 0) GRSet <- GRSet[!to_remove]
-    cat("Removing", sum(to_remove), "failed probes\n")
+    cat("---Removing", sum(to_remove), "failed probes\n")
     cat("Remaining probes:", nrow(GRSet), "\n")
 
     return(GRSet)
@@ -224,25 +246,85 @@ GRSetv1 <- remove_bad_probes(annEPICv1, GRSetv1)
 GRSetv2 <- remove_bad_probes(annEPICv2, GRSetv2)
 
 ###########################################################
+# Combine arrays
+###########################################################
+
+# https://bioconductor.org/packages//release/data/annotation/vignettes/IlluminaHumanMethylationEPICv2manifest/inst/doc/IlluminaHumanMethylationEPICv2manifest.html
+
+# get probes from manifests
+probe1 <- getManifestInfo(IlluminaHumanMethylationEPICmanifest, "locusNames")
+probe2 <- getManifestInfo(IlluminaHumanMethylationEPICv2manifest, "locusNames")
+
+probe1 <- unique(probe1)
+probe2 <- gsub("_.*$", "", probe2)  # remove suffix
+probe2 <- unique(probe2)
+
+# identify common probes
+common_probes_unfiltered <- intersect(probe1, probe2) # n = 722642
+cat(length(common_probes), "common between EPIC and EPICv2\n")
+
+# identify common probes across GRSets
+common_probes <- intersect(
+    common_probes_unfiltered, 
+    intersect(rownames(GRSetv1), gsub("_.*$", "", rownames(GRSetv2)))
+) # n = 482264
+cat(length(common_probes), "common between GRSets\n")
+
+###########################################################
 # Get beta & M values
 ###########################################################
 
 # combine arrays
-GRSet <- combineArrays(GRSet_v1, GRSet_v2, outType = "IlluminaHumanMethylationEPIC")
+# GRSet <- combineArrays(GRSetv1, GRSetv2, outType = "IlluminaHumanMethylationEPIC")
 
 # get beta values
-betas <- getBeta(GRSet)
+bVals1 <- getBeta(GRSetv1)
+bVals2 <- getBeta(GRSetv2)
+bVals2 <- do.call(
+    rbind,
+    tapply(
+        1:nrow(bVals2),
+        gsub("_.*$", "", rownames(bVals2)),
+        function(ind) { colMeans(bVals2[ind, , drop = FALSE]) },
+        simplify = FALSE
+    ))
 
 # get M values
-mVals <- getM(GRSet)
+mVals1 <- getM(GRSetv1)
+mVals2 <- getM(GRSetv2)
+mVals2 <- do.call(
+    rbind,
+    tapply(
+        1:nrow(mVals2),
+        gsub("_.*$", "", rownames(mVals2)),
+        function(ind) { colMeans(mVals2[ind, , drop = FALSE]) },
+        simplify = FALSE
+    ))
+
+# keep common probes
+bVals1 <- bVals1[common_probes,]
+bVals2 <- bVals2[common_probes,]
+mVals1 <- mVals1[common_probes,]
+mVals2 <- mVals2[common_probes,]
+
+# merge matrices
+bVals <- cbind(bVals1, bVals2) |> as.data.frame()
+mVals <- cbind(mVals1, mVals2) |> as.data.frame()
 
 ###########################################################
 # Keep complete probes
 ###########################################################
 
 # keep probes complete across samples
-complete_probes <- complete.cases(mVals) & apply(mVals, 1, function(x) all(is.finite(x)))
-cat("Removing", nrow(mVals) - length(complete_probes), "probes\n")
+complete_probes <- complete.cases(bVals) & apply(bVals, 1, function(x) all(is.finite(x)))
+cat("Removing", nrow(bVals) - length(complete_probes), "probes\n")
 
-betas <- betas[complete_probes,]
+bVals <- bVals[complete_probes,]
 mVals <- mVals[complete_probes,]
+
+###########################################################
+# Save matrices
+###########################################################
+
+write.table(bVals, file = "data/results/data/bVals.tsv", quote = FALSE, row.names = TRUE)
+write.table(mVals, file = "data/results/data/mVals.tsv", quote = FALSE, row.names = TRUE)
