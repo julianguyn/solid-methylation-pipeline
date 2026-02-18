@@ -110,20 +110,53 @@ compare_norm(rgSet_EPICv1, label = "EPICv1")
 compare_norm(rgSet_EPICv2, label = "EPICv2")
 
 ###########################################################
-# Downstream QC after selecting normalization method
-# below using preprocessIllumina()
+# Probe and Sample QC
 ###########################################################
 
-# remove 
-QCv1 <- getQC(preprocessRaw(rgSet_EPICv1))
-QCv2 <- getQC(preprocessRaw(rgSet_EPICv2))
+# get detection pvals
+detPv1 <- detectionP(rgSet_EPICv1)
+detPv2 <- detectionP(rgSet_EPICv2)
 
-rgSet_EPICv1 <- rgSet_EPICv1[,
-    !sampleNames(rgSet_EPICv1) %in% rownames(QCv1)[QCv1$mMed + QCv1$uMed < 21]
-]
-rgSet_EPICv2 <- rgSet_EPICv2[,
-    !sampleNames(rgSet_EPICv2) %in% rownames(QCv2)[QCv2$mMed + QCv2$uMed < 21]
-]
+# plot mean p-values per sample
+toPlot <- c(colMeans(detPv1), colMeans(detPv2))
+pal <- ifelse(
+    toPlot > 0.01,
+    "#7C0B2B",
+    ifelse(
+        names(toPlot) %in% names(colMeans(detPv1)),
+        "#545E56", "#917C78")
+)
+names(toPlot) <- gsub("_.*", "", names(toPlot))
+names(pal) <- gsub("_.*", "", names(pal))
+
+filename <- "data/results/figures/qc/detection_pvals.png"
+png(filename, width = 6, height = 4, res = 600, units = "in")
+barplot(toPlot, las=2, cex.names=0.8, 
+        ylab="Mean detection p-values\n",
+        col=pal)
+abline(h=0.01, col="#7C0B2B", lty=2)
+legend("topright", 
+       legend = c("EPICv1", "EPICv2", "Failed (detP > 0.01)"),
+       fill = c("#545E56", "#917C78", "#7C0B2B"),
+       bty = "n")
+dev.off()
+
+# set QC thresholds
+detP_threshold <- 0.01
+sample_failure_rate <- 0.05
+probe_failure_rate <- 0.1
+
+# get failed samples
+failed_samples_v1 <- colMeans(detPv1 > detP_threshold, na.rm = TRUE) > sample_failure_rate
+failed_samples_v2 <- colMeans(detPv2 > detP_threshold, na.rm = TRUE) > sample_failure_rate
+
+# remove failed samples
+rgSet_EPICv1 <- rgSet_EPICv1[,!failed_samples_v1]
+rgSet_EPICv2 <- rgSet_EPICv2[,!failed_samples_v2] # removing GSM9325977
+
+###########################################################
+# Normalization
+###########################################################
 
 # normalize with preprocessIllumina()
 MSetv1 <- preprocessIllumina(rgSet_EPICv1)
@@ -134,12 +167,35 @@ GRSetv1 <- ratioConvert(mapToGenome(MSetv1))
 GRSetv2 <- ratioConvert(mapToGenome(MSetv2))
 
 ###########################################################
+# Remove failed probes
+###########################################################
+
+# helper function to remove failed probes
+remove_failed_probes <- function(detP, GRSet) {
+
+    # get failed probes
+    failed_probes <- rowMeans(detPv1 > detP_threshold, na.rm = TRUE) > probe_failure_rate
+    common_probes <- intersect(rownames(GRSet), names(failed_probes))
+
+    # remove failed probes
+    to_remove <- failed_probes[common_probes]
+    if (length(to_remove) > 0) GRSet <- GRSet[!to_remove]
+    cat("Removing", sum(to_remove), "failed probes\n")
+    cat("Remaining probes:", nrow(GRSet), "\n")
+
+    return(GRSet)
+}
+
+GRSetv1 <- remove_failed_probes(detPv1, GRSetv1)
+GRSetv2 <- remove_failed_probes(detPv2, GRSetv2)
+
+###########################################################
 # Remove bad probes
 ###########################################################
 
-# helper function to get cross reactive and sex chr probes
-bad_probes <- function(ann) {
-    return(c(
+# helper function to remove cross reactive and sex chr probes
+remove_bad_probes <- function(ann, GRSet) {
+    to_remove <- c(
         # cross reactive probes
         rownames(ann)[
             !is.na(ann$Probe_rs)
@@ -149,12 +205,20 @@ bad_probes <- function(ann) {
         ],
         # probes on sex chrs
         rownames(ann)[ann$chr %in% c("chrX", "chrY")]
-    ))
+    )
+    
+    cat("Removing", length(to_remove), "cross reactive or sex chr probes\n")
+    if (length(to_remove) > 0) GRSet <- GRSet[!rownames(GRSet) %in% to_remove,]
+
+    # remove probes with SNPs (can optionally drop by maf)
+    before <- nrow(GRSet)
+    GRSet <- dropLociWithSnps(GRSet)
+    cat("Removing", nrow(GRSet) - before, "probes with SNPs\n")
+    cat("Remaining probes:", nrow(GRSet), "\n")
+
+    return(GRSet)
+
 }
 
-GRSetv1 <- GRSetv1[!rownames(GRSetv1) %in% bad_probes(annEPICv1),]
-GRSetv2 <- GRSetv2[!rownames(GRSetv2) %in% bad_probes(annEPICv2),]
-
-# remove probes with SNPs (can optionally drop by maf)
-GRSetv1 <- dropLociWithSnps(GRSetv1)
-GRSetv2 <- dropLociWithSnps(GRSetv2)
+GRSetv1 <- remove_bad_probes(annEPICv1, GRSetv1)
+GRSetv2 <- remove_bad_probes(annEPICv2, GRSetv2)
