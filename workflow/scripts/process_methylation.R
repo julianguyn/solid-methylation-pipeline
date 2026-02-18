@@ -9,6 +9,7 @@ suppressPackageStartupMessages({
     library(IlluminaHumanMethylationEPICv2manifest)
     library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
     library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
+    library(reshape2)
     library(ggplot2)
     library(ggpubr)
 })
@@ -34,17 +35,20 @@ for (dir in outdirs) {
 # Load in data
 ###########################################################
 
+# load in idat and solid id mapping
+idat_meta <- read.table("metadata/idat_meta.tsv", header = TRUE)
+idat_meta$SolidID[idat_meta$SolidID == "SOLID-006"] <- "SOLID-009"
+
 # load in sample metadata
 meta <- read.csv("metadata/meta_data_research.csv")
-
-# TODO: FIND MAPPING OF METADATA IDS AND IDAT IDS
+meta$idat <- idat_meta$SampleID[match(meta$Subject, idat_meta$SolidID)]
 
 # load in CpG annotation for both arrays
 annEPICv1 <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
 annEPICv2 <- getAnnotation(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
 
 ###########################################################
-# Make IDAT meta
+# Make targets file
 ###########################################################
 
 # get filenames
@@ -68,6 +72,10 @@ targets$Array <- ifelse(
     "EPICv2"    # IlluminaHumanMethylationEPICv2
 )
 
+# add pheno data
+meta <- meta[match(targets$Sample_Name, meta$idat),]
+targets <- cbind(targets, meta[,c(1, 3:12, 14:25)])
+
 ###########################################################
 # Get RGSets
 ###########################################################
@@ -78,10 +86,28 @@ rgSet_EPICv1 <- read.metharray.exp(targets = targets[targets$Array == "EPIC",])
 # IlluminaHumanMethylationEPICv2 (26 samples)
 rgSet_EPICv2 <- read.metharray.exp(targets = targets[targets$Array == "EPICv2",])
 
-
 ###########################################################
 # Compare normalization methods
 ###########################################################
+
+# helper funciton to make density plot
+plot_density_beta <- function(GRSet, main, convert = TRUE) {
+
+    if (convert == TRUE) GRSet <- ratioConvert(mapToGenome(GRSet))
+    bVals <- getBeta(GRSet)
+    test <- reshape2::melt(bVals)
+
+    p <- ggplot(test, aes(x = value, color = Var2)) +
+        geom_density() +
+        theme_minimal() + 
+        theme(
+            panel.border = element_rect(linewidth = 1.5),
+            legend.position = "none",
+            axis.title = element_text(hjust = 0.5)
+        ) +
+        labs(x = "Beta", y = "Density", title = main)
+    return(p)
+}
 
 # helper function to get normalized values
 compare_norm <- function(RGSet, label) {
@@ -89,37 +115,20 @@ compare_norm <- function(RGSet, label) {
     MSet.raw <- preprocessRaw(RGSet)
     MSet.illumina <- preprocessIllumina(RGSet)
     MSet.swan <- preprocessSWAN(RGSet)
-    #GRSet.quantile <- preprocessQuantile(RGSet)
-    #GRSet.funnorm <- preprocessFunnorm(RGSet)
-    GRSet.noob <- preprocessNoob(RGSet)
+    GRSet.quantile <- preprocessQuantile(RGSet)
+    GRSet.funnorm <- preprocessFunnorm(RGSet, sex = pData(RGSet)$Sex)
+    MSet.noob <- preprocessNoob(RGSet)
 
-    p1 <- densityPlot(MSet.raw, main = "Raw", legend = FALSE)
-    p2 <- densityPlot(MSet.illumina, main = "Illumina", legend = FALSE)
-    p3 <- densityPlot(MSet.swan, main = "SWAN", legend = FALSE)
-    #p4 <- densityPlot(GRSet.quantile, main = "Quantile", legend = FALSE)
-    #p5 <- densityPlot(GRSet.funnorm, main = "Funnorm", legend = FALSE)
-    p6 <- densityPlot(GRSet.noob, main = "Noob", legend = FALSE)
-
-    p7 <- plotQC(getQC(MSet.raw))
-    p8 <- plotQC(getQC(MSet.illumina))
-    p9 <- plotQC(getQC(MSet.swan))
-    #p10 <- plotQC(getQC(GRSet.quantile))
-    #p11 <- plotQC(getQC(GRSet.funnorm))
-    p12 <- plotQC(getQC(GRSet.noob))
+    p1 <- plot_density_beta(MSet.raw, main = "Raw", convert = TRUE)
+    p2 <- plot_density_beta(MSet.illumina, main = "Illumina", convert = TRUE)
+    p3 <- plot_density_beta(MSet.swan, main = "SWAN", convert = TRUE)
+    p4 <- plot_density_beta(GRSet.quantile, main = "Quantile", convert = FALSE)
+    p5 <- plot_density_beta(GRSet.funnorm, main = "Funnorm", convert = FALSE)
+    p6 <- plot_density_beta(MSet.noob, main = "Noob", convert = TRUE)
 
     filename <- paste0("data/results/figures/normalization/", label, ".png")
     png(filename, width = 12, height = 6, res = 600, units = "in")
-    print({
-        par(mfrow = c(2, 4))
-        densityPlot(MSet.raw, main = "Raw", legend = FALSE)
-        densityPlot(MSet.illumina, main = "Illumina", legend = FALSE)
-        densityPlot(MSet.swan, main = "SWAN", legend = FALSE)
-        densityPlot(GRSet.noob, main = "Noob", legend = FALSE)
-        plotQC(getQC(MSet.raw))
-        plotQC(getQC(MSet.illumina))
-        plotQC(getQC(MSet.swan))
-        plotQC(getQC(GRSet.noob))
-    })
+    print({ggarrange(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2)})
     dev.off()
 }
 
