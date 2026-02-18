@@ -222,3 +222,27 @@ remove_bad_probes <- function(ann, GRSet) {
 
 GRSetv1 <- remove_bad_probes(annEPICv1, GRSetv1)
 GRSetv2 <- remove_bad_probes(annEPICv2, GRSetv2)
+
+###########################################################
+# Get beta & M values
+###########################################################
+
+# combine arrays
+GRSet <- combineArrays(GRSet_v1, GRSet_v2, outType = "IlluminaHumanMethylationEPIC")
+
+# get beta values
+betas <- getBeta(GRSet)
+
+# get M values
+mVals <- getM(GRSet)
+
+###########################################################
+# Keep complete probes
+###########################################################
+
+# keep probes complete across samples
+complete_probes <- complete.cases(mVals) & apply(mVals, 1, function(x) all(is.finite(x)))
+cat("Removing", nrow(mVals) - length(complete_probes), "probes\n")
+
+betas <- betas[complete_probes,]
+mVals <- mVals[complete_probes,]
