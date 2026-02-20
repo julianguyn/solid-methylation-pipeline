@@ -12,8 +12,10 @@ suppressPackageStartupMessages({
     library(reshape2)
     library(ggplot2)
     library(ggpubr)
+    library(umap)
 })
 
+source("workflow/scripts/utils/palettes.R")
 
 # ---------------------------------------------------------
 # Make directories
@@ -35,105 +37,12 @@ for (dir in outdirs) {
 # Load in data
 ###########################################################
 
-# load in idat and solid id mapping
-idat_meta <- read.table("metadata/idat_meta.tsv", header = TRUE)
-idat_meta$SolidID[idat_meta$SolidID == "SOLID-006"] <- "SOLID-009"
-
-# load in sample metadata
-meta <- read.csv("metadata/meta_data_research.csv")
-meta$idat <- idat_meta$SampleID[match(meta$Subject, idat_meta$SolidID)]
+# load in RGSets and targets
+load("data/procdata/RGSets_targets.RData")
 
 # load in CpG annotation for both arrays
 annEPICv1 <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
 annEPICv2 <- getAnnotation(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
-
-###########################################################
-# Make targets file
-###########################################################
-
-# get filenames
-targets <- data.frame(
-    Sample_Name = sub("_.*", "", list.files("data/rawdata/idats")),
-    Basename = sub("_...\\.idat", "", list.files("data/rawdata/idats", full.names = TRUE))
-) |> unique()
-
-# get slide and array
-targets$Sentrix_ID <- targets$Sentrix_Position <- targets$Array <- NULL
-for (i in 1:nrow(targets)) {
-    vars <- str_split_1(list.files("data/rawdata/idats")[i], "_")
-    targets$Sentrix_ID[i] <- vars[2]
-    targets$Sentrix_Position[i] <- vars[3]
-}
-
-# annotate array type
-targets$Array <- ifelse(
-    targets$Sample_Name %in% c("GSM9325970", "GSM9325971", "GSM9325972"),
-    "EPIC",     # IlluminaHumanMethylationEPIC
-    "EPICv2"    # IlluminaHumanMethylationEPICv2
-)
-
-# add pheno data
-meta <- meta[match(targets$Sample_Name, meta$idat),]
-targets <- cbind(targets, meta[,c(1, 3:12, 14:25)])
-
-###########################################################
-# Get RGSets
-###########################################################
-
-# IlluminaHumanMethylationEPIC (3 samples)
-rgSet_EPICv1 <- read.metharray.exp(targets = targets[targets$Array == "EPIC",])
-
-# IlluminaHumanMethylationEPICv2 (26 samples)
-rgSet_EPICv2 <- read.metharray.exp(targets = targets[targets$Array == "EPICv2",])
-
-###########################################################
-# Compare normalization methods
-###########################################################
-
-# helper funciton to make density plot
-plot_density_beta <- function(GRSet, main, convert = TRUE) {
-
-    if (convert == TRUE) GRSet <- ratioConvert(mapToGenome(GRSet))
-    bVals <- getBeta(GRSet)
-    test <- reshape2::melt(bVals)
-
-    p <- ggplot(test, aes(x = value, color = Var2)) +
-        geom_density() +
-        theme_minimal() + 
-        theme(
-            panel.border = element_rect(linewidth = 1.5),
-            legend.position = "none",
-            axis.title = element_text(hjust = 0.5)
-        ) +
-        labs(x = "Beta", y = "Density", title = main)
-    return(p)
-}
-
-# helper function to get normalized values
-compare_norm <- function(RGSet, label) {
-
-    MSet.raw <- preprocessRaw(RGSet)
-    MSet.illumina <- preprocessIllumina(RGSet)
-    MSet.swan <- preprocessSWAN(RGSet)
-    GRSet.quantile <- preprocessQuantile(RGSet)
-    GRSet.funnorm <- preprocessFunnorm(RGSet, sex = pData(RGSet)$Sex)
-    MSet.noob <- preprocessNoob(RGSet)
-
-    p1 <- plot_density_beta(MSet.raw, main = "Raw", convert = TRUE)
-    p2 <- plot_density_beta(MSet.illumina, main = "Illumina", convert = TRUE)
-    p3 <- plot_density_beta(MSet.swan, main = "SWAN", convert = TRUE)
-    p4 <- plot_density_beta(GRSet.quantile, main = "Quantile", convert = FALSE)
-    p5 <- plot_density_beta(GRSet.funnorm, main = "Funnorm", convert = FALSE)
-    p6 <- plot_density_beta(MSet.noob, main = "Noob", convert = TRUE)
-
-    filename <- paste0("data/results/figures/normalization/", label, ".png")
-    png(filename, width = 12, height = 6, res = 600, units = "in")
-    print({ggarrange(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2)})
-    dev.off()
-}
-
-compare_norm(rgSet_EPICv1, label = "EPICv1")
-compare_norm(rgSet_EPICv2, label = "EPICv2")
 
 ###########################################################
 # Probe and Sample QC
