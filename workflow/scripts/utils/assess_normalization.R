@@ -1,8 +1,13 @@
-plot_density_beta <- function(GRSet, main) {
+plot_density_beta <- function(GRSet, main, map = FALSE) {
 
     bVals <- getBeta(GRSet)
     toPlot <- reshape2::melt(bVals)
-    toPlot$RECIST <- targets$Response_RANO[match(toPlot$Var2, gsub(".*/", "", targets$Basename))]
+    
+    if (map == FALSE) {
+        toPlot$RECIST <- targets$Response_RANO[match(toPlot$Var2, gsub(".*/", "", targets$Basename))]
+    } else {
+        toPlot$RECIST <- targets$Response_RANO[match(toPlot$Var2, targets$Subject)]
+    }
 
     p <- ggplot(toPlot, aes(x = value, group = Var2, color = RECIST)) +
         geom_density() +

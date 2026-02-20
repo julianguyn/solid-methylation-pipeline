@@ -9,13 +9,14 @@ suppressPackageStartupMessages({
     library(IlluminaHumanMethylationEPICv2manifest)
     library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
     library(IlluminaHumanMethylationEPICv2anno.20a1.hg38)
-    library(reshape2)
     library(ggplot2)
     library(ggpubr)
-    library(umap)
 })
 
 source("workflow/scripts/utils/palettes.R")
+source("workflow/scripts/utils/assess_normalization.R")
+
+set.seed(101)
 
 # ---------------------------------------------------------
 # Make directories
@@ -39,6 +40,10 @@ for (dir in outdirs) {
 
 # load in RGSets and targets
 load("data/procdata/RGSets_targets.RData")
+targets$match <- gsub(".*/", "", targets$Basename)
+colnames(rgSet_EPICv1) <- targets$Subject[match(colnames(rgSet_EPICv1), targets$match)]
+colnames(rgSet_EPICv2) <- targets$Subject[match(colnames(rgSet_EPICv2), targets$match)]
+
 
 # load in CpG annotation for both arrays
 annEPICv1 <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
@@ -61,8 +66,6 @@ pal <- ifelse(
         names(toPlot) %in% names(colMeans(detPv1)),
         "#545E56", "#AA9995")
 )
-names(toPlot) <- gsub("_.*", "", names(toPlot))
-names(pal) <- gsub("_.*", "", names(pal))
 
 filename <- "data/results/figures/qc/detection_pvals.png"
 png(filename, width = 6, height = 4, res = 600, units = "in")
@@ -90,26 +93,38 @@ cat("Failed sample:", names(failed_samples_v2[which(failed_samples_v2 == TRUE)])
 
 # remove failed samples
 rgSet_EPICv1 <- rgSet_EPICv1[,!failed_samples_v1]
-rgSet_EPICv2 <- rgSet_EPICv2[,!failed_samples_v2] # removing GSM9325977
+rgSet_EPICv2 <- rgSet_EPICv2[,!failed_samples_v2] # removing SOLID-040
 
 ###########################################################
 # Normalization
 ###########################################################
 
-# normalize with preprocessIllumina()
-MSetv1 <- preprocessIllumina(rgSet_EPICv1)
-MSetv2 <- preprocessIllumina(rgSet_EPICv2)
+# normalize with preprocessNoob() and preprocessSWAN()
+MSetv1 <- preprocessSWAN(rgSet_EPICv1, preprocessNoob(rgSet_EPICv1))
+MSetv2 <- preprocessSWAN(rgSet_EPICv2, preprocessNoob(rgSet_EPICv2))
 
-# convert to GenomicRatioSet (remove if change to Quantile normalization)
+# convert to GenomicRatioSet
 GRSetv1 <- ratioConvert(mapToGenome(MSetv1))
 GRSetv2 <- ratioConvert(mapToGenome(MSetv2))
+
+###########################################################
+# Plot density
+###########################################################
+
+p1 <- plot_density_beta(GRSetv1, main = "EPICv1", map = TRUE)
+p2 <- plot_density_beta(GRSetv2, main = "EPICv2", map = TRUE)
+
+filename <- paste0("data/results/figures/normalization/filtered_sample_density.png")
+png(filename, width = 10, height = 4, res = 600, units = "in")
+ggarrange(p1, p2)
+dev.off()
 
 ###########################################################
 # Remove failed probes
 ###########################################################
 
 # helper function to remove failed probes
-remove_failed_probes <- function(detP, GRSet) {
+remove_failed_probes <- function(detP, GRSet, ann) {
 
     cat("Starting with", nrow(GRSet), "probes\n")
 
@@ -123,18 +138,7 @@ remove_failed_probes <- function(detP, GRSet) {
     cat("---Removing", sum(to_remove), "failed probes\n")
     cat("Remaining probes:", nrow(GRSet), "\n")
 
-    return(GRSet)
-}
-
-GRSetv1 <- remove_failed_probes(detPv1, GRSetv1)
-GRSetv2 <- remove_failed_probes(detPv2, GRSetv2)
-
-###########################################################
-# Remove bad probes
-###########################################################
-
-# helper function to remove cross reactive and sex chr probes
-remove_bad_probes <- function(ann, GRSet) {
+    # remove bad probes
     to_remove <- c(
         # cross reactive probes
         rownames(ann)[
@@ -157,11 +161,11 @@ remove_bad_probes <- function(ann, GRSet) {
     cat("Remaining probes:", nrow(GRSet), "\n")
 
     return(GRSet)
-
 }
 
-GRSetv1 <- remove_bad_probes(annEPICv1, GRSetv1)
-GRSetv2 <- remove_bad_probes(annEPICv2, GRSetv2)
+GRSetv1 <- remove_failed_probes(detPv1, GRSetv1, annEPICv1)
+GRSetv2 <- remove_failed_probes(detPv2, GRSetv2, annEPICv2)
+
 
 ###########################################################
 # Combine arrays
@@ -179,7 +183,7 @@ probe2 <- unique(probe2)
 
 # identify common probes
 common_probes_unfiltered <- intersect(probe1, probe2) # n = 722642
-cat(length(common_probes), "common between EPIC and EPICv2\n")
+cat(length(common_probes_unfiltered), "common between EPIC and EPICv2\n")
 
 # identify common probes across GRSets
 common_probes <- intersect(
