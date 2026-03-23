@@ -96,7 +96,7 @@ get_DMPs <- function(design, mVals) {
     fit <- lmFit(mVals, design)
     fit2 <- eBayes(fit)
     dmps <- topTable(fit2, coef = 2, number = Inf, adjust.method = "BH", sort.by = "p")
-    nsig <- nrow(dmps[dmps$adj.P.Val < 0.05,])
+    nsig <- nrow(dmps[dmps$adj.P.Val < 0.1,])
     print(paste("Number of FDR sig DMPs:", nsig))
     return(dmps)
 }
