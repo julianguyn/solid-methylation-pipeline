@@ -2,6 +2,8 @@
 suppressPackageStartupMessages({
     library(data.table)
     library(GenomicRanges)
+    library(ChIPseeker)
+    library(TxDb.Hsapiens.UCSC.hg19.knownGene)
     library(rGREAT)
     library(ggplot2)
     library(viridis)
@@ -20,6 +22,8 @@ dmrs <- dmrs[!is.na(dmrs$logFC),] # 2933 dmrs
 hyper <- dmrs[which(dmrs$logFC > 0),] # 1302 dmrs
 hypo <- dmrs[which(dmrs$logFC < 0),] # 1631 dmrs
 
+txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+
 ###########################################################
 # Create genomic ranges
 ###########################################################
@@ -31,6 +35,48 @@ hypo_coords <- do.call(rbind, strsplit(hypo$Region_ID, "\\.")) |> as.data.frame(
 # make genomic ranges object
 hyper_gr <- GRanges(seqnames = hyper_coords$V1, ranges = IRanges(as.numeric(hyper_coords$V2), as.numeric(hyper_coords$V3)))
 hypo_gr <- GRanges(seqnames = hypo_coords$V1, ranges = IRanges(as.numeric(hypo_coords$V2), as.numeric(hypo_coords$V3)))
+
+###########################################################
+# Annotate genomic regions
+###########################################################
+
+# annotate regions
+hyper_anno <- annotatePeak(hyper_gr, tssRegion=c(-250, 250), TxDb=txdb, annoDb="org.Hs.eg.db")
+hypo_anno <- annotatePeak(hypo_gr, tssRegion=c(-250, 250), TxDb=txdb, annoDb="org.Hs.eg.db")
+
+# create toPlot
+hyper <- hyper@annoStat
+hypo <- hypo@annoStat
+hyper$Label <- "Hyper"
+hypo$Label <- "Hypo"
+toPlot <- rbind(hyper, hypo)
+
+# plot gene features
+filename <- paste0("data/results/figures/cholangio/peakanno.png")
+png(filename, width = 5, height = 5, res = 600, units = "in")
+ggplot(toPlot, aes(fill=Feature, y=Frequency, x=Label)) + 
+    geom_bar(position="fill", stat="identity", color = "black") +
+    scale_fill_manual(values = genefeat_pal) +
+    theme_minimal() + 
+    labs(y = "Percentage (%)")
+dev.off()
+
+###########################################################
+# Keep promoter regions
+###########################################################
+
+# 133 hypermethylated promoters
+hyper_df <- as.data.frame(hyper_anno)
+hyper_promoter <- hyper_df[grep("Promoter", hyper_df$annotation), ]
+
+# 225 hypomethylated promoters
+hypo_df <- as.data.frame(hypo_anno)
+hypo_promoter <- hypo_df[grep("Promoter", hypo_df$annotation), ]
+
+# make genomic ranges object
+hyper_gr <- GRanges(seqnames = hyper_promoter$seqnames, ranges = IRanges(hyper_promoter$start, hyper_promoter$end))
+hypo_gr <- GRanges(seqnames = hypo_promoter$seqnames, ranges = IRanges(hypo_promoter$start, hypo_promoter$end))
+
 
 ###########################################################
 # GREAT analysis
@@ -63,8 +109,8 @@ run_great <- function(gr, label) {
     return(res)
 }
 
-hyper_res <- run_great(hyper_gr, "hypermethylation_GREAT") # 244 pathways
-hypo_res <- run_great(hypo_gr, "hypomethylation_GREAT") # 172
+hyper_res <- run_great(hyper_gr, "hyper_promoter_GREAT") # 244 all, 0 promoter
+hypo_res <- run_great(hypo_gr, "hypo_promoter_GREAT") # 172 all, 0 promoter
 
 ###########################################################
 # Plot GREAT analysis
@@ -72,6 +118,7 @@ hypo_res <- run_great(hypo_gr, "hypomethylation_GREAT") # 172
 
 plot_GREAT <- function(great, label) {
 
+    great <- great[great$Hyper_Total_Genes > 10,]
     great <- great[order(great$Hyper_Fold_Enrichment, decreasing = TRUE),]
     toPlot <- great[1:30,]
     toPlot$name <- factor(toPlot$name, levels=rev(toPlot$name))
@@ -86,7 +133,7 @@ plot_GREAT <- function(great, label) {
             shape = guide_legend(title = "Ontology", override.aes = list(size = 4)),
             color = guide_legend(override.aes = list(shape = 19, size = 4))
         ) +
-        scale_color_viridis_c(option = "rocket", direction = -1, end = 0.85) +
+        scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
         theme_classic() + 
         theme(
             legend.key.size = unit(0.5, 'cm'), text = element_text(size = 10),
@@ -106,3 +153,7 @@ plot_GREAT <- function(great, label) {
 
 plot_GREAT(hyper_res, "hypermethylation")
 plot_GREAT(hypo_res, "hypomethylation")
+
+###########################################################
+# Plot GREAT analysis
+###########################################################
