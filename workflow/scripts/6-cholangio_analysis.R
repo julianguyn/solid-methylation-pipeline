@@ -7,6 +7,8 @@ suppressPackageStartupMessages({
     library(rGREAT)
     library(ggplot2)
     library(viridis)
+    library(clusterProfiler)
+    library(org.Hs.eg.db)
 })
 
 source("workflow/scripts/utils/palettes.R")
@@ -79,9 +81,99 @@ hypo_gr <- GRanges(seqnames = hypo_promoter$seqnames, ranges = IRanges(hypo_prom
 
 
 ###########################################################
+# Run GO analysis
+###########################################################
+
+# run GO
+run_go <- function(df, label) {
+
+    genes <- unique(df$geneId)
+    ontologies <- c("BP", "MF", "CC")
+
+    # run enrichGO
+    go_list <- lapply(ontologies, function(o) {
+        enrichGO(
+            gene = genes,
+            OrgDb = org.Hs.eg.db,
+            keyType = "ENTREZID",
+            ont = o,
+            pAdjustMethod = "BH",
+            pvalueCutoff = 0.05,
+            qvalueCutoff = 0.05,
+            readable = TRUE
+        ) |> as.data.frame()
+    })
+    names(go_list) <- ontologies
+
+    # bind results
+    bp <- go_list$BP
+    mf <- go_list$MF
+    cc <- go_list$CC
+
+    if (nrow(bp) > 0) bp$Label <- "BP"
+    if (nrow(mf) > 0) mf$Label <- "MF"
+    if (nrow(cc) > 0) cc$Label <- "CC"
+
+    res <- rbind(bp, mf, cc)
+    filename <- paste0("data/results/data/cholangio/", label, "_GO.tsv")
+    write.table(res, file = filename, quote = F, sep = "\t", col.names = T, row.names = F)
+    return(res)
+}
+
+# genes from all regions
+hyper_go_all <- run_go(hyper_df, "hyper_all") # 11 results
+hypo_go_all <- run_go(hypo_df, "hypo_all") # 64 results
+
+# genes from promoter regions only
+hyper_go_promoter <- run_go(hyper_promoter, "hyper_promoter") # no results
+hypo_go_promoter <- run_go(hypo_promoter, "hypo_promoter") # 7 results
+
+
+###########################################################
+# Plot GO analysis
+###########################################################
+
+plot_go <- function(go_res, label) {
+
+    go_res <- go_res[order(go_res$p.adjust, decreasing = TRUE),]
+    go_res$Description <- factor(go_res$Description, levels = go_res$Description)
+
+    if (label == "hypo_promoter") {
+        w <- 5
+        h <- 3.5
+    } else {
+        w <- 7
+        h <- 5
+        go_res <- go_res[1:10,]
+    }
+
+    # add gene ratio
+    go_res$GeneRatio <- sapply(go_res$GeneRatio, function(x) {
+    vals <- strsplit(x, "/")[[1]]       # split "3/132" into c("3","132")
+    as.numeric(vals[1]) / as.numeric(vals[2])
+    })
+
+    filename <- paste0("data/results/figures/cholangio/", label, "_GO.png")
+    png(filename, width = 5, height = 3.5, res = 600, units = "in")
+    print(ggplot(go_res, aes(x = Label, y = Description, color = p.adjust, size = GeneRatio)) +
+        geom_point() +
+        scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
+        theme_bw() +
+        theme(axis.title.y = element_blank()) +
+        labs(x = "Ontology"))
+    dev.off()
+
+}
+
+plot_go(hyper_go_all, "hyper_all")
+plot_go(hypo_go_all, "hypo_all")
+plot_go(hypo_go_promoter, "hypo_promoter")
+
+###########################################################
 # GREAT analysis
 ###########################################################
 
+# helper function to run GREAT anlaysis
 run_great <- function(gr, label) {
     job <- submitGreatJob(gr, species = "hg19", genome = "hg19", help = FALSE)
     tbl <- getEnrichmentTables(job)
@@ -116,6 +208,7 @@ hypo_res <- run_great(hypo_gr, "hypo_promoter_GREAT") # 172 all, 0 promoter
 # Plot GREAT analysis
 ###########################################################
 
+# helper function to plot GREAT analysis results
 plot_GREAT <- function(great, label) {
 
     great <- great[great$Hyper_Total_Genes > 10,]
@@ -153,7 +246,3 @@ plot_GREAT <- function(great, label) {
 
 plot_GREAT(hyper_res, "hypermethylation")
 plot_GREAT(hypo_res, "hypomethylation")
-
-###########################################################
-# Plot GREAT analysis
-###########################################################
