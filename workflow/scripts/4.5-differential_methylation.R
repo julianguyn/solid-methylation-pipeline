@@ -1,3 +1,5 @@
+# trying differential methylation with different versions of minfi normalization
+
 # load libraries
 suppressPackageStartupMessages({
     library(data.table)
@@ -27,12 +29,12 @@ targets$match <- gsub(".*/", "", targets$Basename)
 meta <- read.csv("metadata/clin_updated.csv")
 
 # get beta values
-bVals <- fread("data/results/data/bVals.tsv", data.table = FALSE)
+bVals <- fread("data/results/data/reprocessing/bVals.tsv", data.table = FALSE)
 rownames(bVals) <- bVals$V1
 bVals$V1 <- NULL
 
 # get m values
-mVals <- fread("data/results/data/mVals.tsv", data.table = FALSE)
+mVals <- fread("data/results/data/reprocessing/mVals.tsv", data.table = FALSE)
 rownames(mVals) <- mVals$V1
 mVals$V1 <- NULL
 
@@ -47,7 +49,7 @@ anno <- anno[rownames(mVals), ]
 targets <- targets[match(colnames(mVals), targets$Subject),]
 meta <- meta[match(colnames(mVals), meta$Subject),]
 
-targets$responder <- factor(meta$response, levels = c("R", "NR"))
+targets$responder <- factor(meta$response, levels = c("NR", "R"))
 targets$Sex <- factor(targets$Sex)
 
 ###########################################################
@@ -115,12 +117,12 @@ dmp_3 <- get_DMPs(model.matrix(~ responder, data = targets), mVals)
 # get cpg annotation
 myannotation <- cpg.annotate(
     datatype = "array",
-    object = as.matrix(mVals_sub),
+    object = as.matrix(mVals),
     what = "M",
     analysis.type = "differential",
-    design = model.matrix(~ CDKN2, data = targets_sub),
+    design = model.matrix(~ responder, data = targets),
     contrasts = FALSE,
-    coef = "responderResponder",
+    coef = "responderR",
     arraytype = "EPICv1",
     fdr = 0.1
 )
