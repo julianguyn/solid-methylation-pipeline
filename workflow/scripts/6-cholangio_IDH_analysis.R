@@ -9,6 +9,7 @@ suppressPackageStartupMessages({
     library(viridis)
     library(clusterProfiler)
     library(org.Hs.eg.db)
+    library(pheatmap)
 })
 
 source("workflow/scripts/utils/palettes.R")
@@ -19,12 +20,33 @@ set.seed(101)
 # Load in data
 ###########################################################
 
+# load in dmrs
 dmrs <- fread("data/rawdata/cholangio/cholangio_baseline_IDHwt_Vs_IDHmut_DiffExpr_limma_Result_p_0.1.txt", data.table = FALSE)
 dmrs <- dmrs[!is.na(dmrs$logFC),] # 2933 dmrs
 hyper <- dmrs[which(dmrs$logFC > 0),] # 1302 dmrs
 hypo <- dmrs[which(dmrs$logFC < 0),] # 1631 dmrs
 
+# load in matrix
+mat <- readRDS("data/rawdata/cholangio/MeDIP_Solid_cholangiocarcinoma_log2CPM.rds")
+
+# load in metadata
+pheno <- fread("data/rawdata/cholangio/Pheno_cholangio_all_IDHwt_Vs_IDHmut.txt")
+
+# load in annotation
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+
+###########################################################
+# Quick heatmap
+###########################################################
+
+toPlot <- mat[rownames(mat) %in% dmrs$Region_ID,]
+
+p <- pheatmap(
+    toPlot,
+    scale = "row",
+    cluster_rows = TRUE,
+    cutree_rows = 2
+)
 
 ###########################################################
 # Create genomic ranges
