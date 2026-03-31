@@ -45,7 +45,9 @@ p <- pheatmap(
     toPlot,
     scale = "row",
     cluster_rows = TRUE,
-    cutree_rows = 2
+    cutree_rows = 2,
+    treeheight_row = 20,
+    show_rownames = FALSE
 )
 
 ###########################################################
