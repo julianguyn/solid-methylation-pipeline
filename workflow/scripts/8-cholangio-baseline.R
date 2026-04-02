@@ -56,6 +56,9 @@ baseline$final_response <- ifelse(
     baseline$solid_patient %in% pheno$solid_patient[pheno$response == "SD"],
     "SD", "PD"
 )
+baseline$final_response[baseline$solid_patient == "Solid-10"] <- "PD"
+## TODO:: with these labels, pool all plasma from these patients (can try capping at PD timepoint after)
+
 
 ###########################################################
 # Keep baseline samples

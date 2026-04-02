@@ -51,6 +51,75 @@ p <- pheatmap(
 )
 
 ###########################################################
+# Genes from top DMRs
+###########################################################
+
+# top genes by peak overlap occurence
+top_genes_by_count <- function(genes, dmr_res, label) {
+    all_genes <- unlist(strsplit(gsub("\\[|\\]|'", "", genes), ",\\s*"))
+    count_df <- as.data.frame(table(all_genes))
+    count_df <- count_df[order(count_df$Freq, decreasing = TRUE),]
+    count_df <- count_df[count_df$all_genes != "NA",]
+
+    # keep top 10 by count
+    toPlot <- count_df[1:10,]
+    toPlot$all_genes <- factor(toPlot$all_genes, levels = rev(toPlot$all_genes))
+
+    # get average FC
+    avgFC <- c()
+    for (gene in toPlot$all_genes) {
+        tt <- dmr_res[grep(gene, dmr_res$annot.symbol),]
+        avgFC <- c(avgFC, mean(tt$logFC))
+    }
+    toPlot$logFC <- abs(avgFC)
+
+    p <- ggplot(toPlot, aes(x = label, y = all_genes, color = Freq, size = logFC)) +
+        geom_point() +
+        scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
+        theme_bw() +
+        theme(axis.title.x = element_blank()) +
+        labs(y = "Top Genes from DMRs")
+    filename <- paste0("data/results/figures/cholangio/top_genes/bycount_", label, ".png")
+    ggsave(filename, p, width = 3, height = 4.5)
+}
+
+top_genes_by_count(hyper$annot.symbol, hyper, "Hyper")
+top_genes_by_count(hypo$annot.symbol, hypo, "Hypo")
+
+# top genes by average logFC
+top_genes_by_FC <- function(genes, dmr_res, label, w) {
+
+    all_genes <- unlist(strsplit(gsub("\\[|\\]|'", "", genes), ",\\s*"))
+    count_df <- as.data.frame(table(all_genes))
+    count_df <- count_df[order(count_df$Freq, decreasing = TRUE),]
+    count_df <- count_df[count_df$all_genes != "NA",]
+    avgFC <- data.frame(Gene = unique(all_genes), avgFC = NA)
+    avgFC <- avgFC[complete.cases(avgFC$Gene),]
+
+    for (gene in avgFC$Gene) {
+        tt <- dmr_res[grep(gene, dmr_res$annot.symbol),]
+        avgFC$avgFC[avgFC$Gene == gene] <- abs(mean(tt$logFC))
+    }
+    avgFC <- avgFC[order(avgFC$avgFC, decreasing = TRUE),]
+    avgFC$count <- count_df$Freq[match(avgFC$Gene, count_df$all_genes)]
+
+    toPlot <- avgFC[1:20,]
+    toPlot$Gene <- factor(toPlot$Gene, levels = rev(toPlot$Gene))
+
+    p <- ggplot(toPlot, aes(x = label, y = Gene, fill = avgFC)) +
+        geom_tile(color = "black") +
+        scale_fill_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
+        theme_minimal() +
+        theme(axis.title.x = element_blank()) +
+        labs(y = "Top Genes from DMRs")
+    filename <- paste0("data/results/figures/cholangio/top_genes/byFC_", label, ".png")
+    ggsave(filename, p, width = w, height = 4.5)
+}
+
+top_genes_by_FC(hyper$annot.symbol, hyper, "Hyper", w=3)
+top_genes_by_FC(hypo$annot.symbol, hypo, "Hypo", w=2.5)
+
+###########################################################
 # Create genomic ranges
 ###########################################################
 
