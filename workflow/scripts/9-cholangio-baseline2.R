@@ -1,3 +1,5 @@
+# try pooling all samples based on baseline labels
+
 # load libraries
 suppressPackageStartupMessages({
     library(data.table)
@@ -23,13 +25,12 @@ set.seed(101)
 ###########################################################
 
 mat <- readRDS("data/rawdata/cholangio/MeDIP_Solid_cholangiocarcinoma_log2CPM.rds")
-
 pheno <- fread("data/rawdata/cholangio/Pheno_cholangio_all_IDHwt_Vs_IDHmut.txt") #64
-#pheno2 <- fread("data/rawdata/cholangio/Pheno_cholangio_baseline_IDHwt_Vs_IDHmut.txt") #16
 
 # keep only cholangio samples
-mat <- mat[,colnames(mat) %in% pheno$MeDIP_ID]
-pheno <- pheno[match(colnames(mat), pheno$MeDIP_ID),] # 38
+common <- intersect(pheno$MeDIP_ID, colnames(mat))
+mat <- mat[,match(common, colnames(mat))]
+pheno <- pheno[match(common, pheno$MeDIP_ID),] #56 samples from 10 patients
 
 ids <- unique(pheno$solid_patient)
 for (id in ids) {
@@ -56,45 +57,37 @@ baseline$final_response <- ifelse(
     baseline$solid_patient %in% pheno$solid_patient[pheno$response == "SD"],
     "SD", "PD"
 )
+
+# recode Solid-10
 baseline$final_response[baseline$solid_patient == "Solid-10"] <- "PD"
 
-###########################################################
-# Keep baseline samples
-###########################################################
-
-baseline <- baseline[baseline$phase == "c1d1",]
-baseline <- unique(baseline[,c(2, 6, 10, 15, 18)])
-# pheno[,c(2,6, 10, 17)]
-# baseline[,c(2, 6, 10, 17, 18)]
-# keep only c1d1 to be consistent (remove screens)
-
-# subset matrix
-mat <- mat[,match(baseline$MeDIP_ID, colnames(mat))]
+response <- unique(baseline[,c(2, 18)][order(baseline$final_response),])
 
 ###########################################################
 # Run linear model (SD-PD)
 ###########################################################
 
 # set variables
-labels <- factor(baseline$final_response)
+pheno$final_response <- response$final_response[match(pheno$solid_patient, response$solid_patient)]
+labels <- factor(pheno$final_response)
 
 # model
-design <- model.matrix(~ labels) # 465 DMRs with FDR<0.05
+design <- model.matrix(~ labels) # 1470 DMRs with FDR<0.05
 fit <- lmFit(mat, design)
 fit <- eBayes(fit)
 res <- topTable(fit, coef = "labelsSD", number = Inf)
 table(res$adj.P.Val < 0.05)
 
-write.csv(res, file = "data/results/data/cholangio/baseline_sd_vs_pd.csv", quote = FALSE, row.names = TRUE)
+write.csv(res, file = "data/results/data/cholangio/frombaseline_all_sd_vs_pd.csv", quote = FALSE, row.names = TRUE)
 
-#ggplot() +
-#    geom_point(data = res, aes(x = logFC, y = -log10(adj.P.Val)), color = "gray") +
-#    geom_point(data = res[res$logFC > 2 & res$adj.P.Val < 0.05,], aes(x = logFC, y = -log10(adj.P.Val)), color = "red") +
-#    geom_point(data = res[res$logFC < -2 & res$adj.P.Val < 0.05,], aes(x = logFC, y = -log10(adj.P.Val)), color = "blue") +
-#    theme_bw()
+ggplot() +
+    geom_point(data = res, aes(x = logFC, y = -log10(adj.P.Val)), color = "gray") +
+    geom_point(data = res[res$logFC > 2 & res$adj.P.Val < 0.05,], aes(x = logFC, y = -log10(adj.P.Val)), color = "red") +
+    geom_point(data = res[res$logFC < -2 & res$adj.P.Val < 0.05,], aes(x = logFC, y = -log10(adj.P.Val)), color = "blue") +
+    theme_bw()
 
-hyper <- res[res$logFC > 2 & res$adj.P.Val < 0.05,] #54
-hypo <- res[res$logFC < -2 & res$adj.P.Val < 0.05,] #411
+hyper <- res[res$logFC > 0 & res$adj.P.Val < 0.05,] #383
+hypo <- res[res$logFC < 0 & res$adj.P.Val < 0.05,] #1087
 
 ###########################################################
 # Create genomic ranges
@@ -125,7 +118,7 @@ toPlot <- rbind(hyper, hypo)
 toPlot$Feature <- factor(toPlot$Feature, levels = names(genefeat_pal))
 
 # plot gene features
-filename <- paste0("data/results/figures/cholangio/baseline_sdpd_peakanno.png")
+filename <- paste0("data/results/figures/cholangio/frombaseline_all_sdpd_peakanno.png")
 png(filename, width = 4, height = 4, res = 600, units = "in")
 ggplot(toPlot, aes(fill=Feature, y=Frequency, x=Label)) + 
     geom_bar(position="fill", stat="identity", color = "black") +
@@ -138,11 +131,11 @@ dev.off()
 # Keep promoter regions
 ###########################################################
 
-# 11 hypermethylated promoters
+# 50 hypermethylated promoters
 hyper_df <- as.data.frame(hyper_anno)
 hyper_promoter <- hyper_df[grep("Promoter", hyper_df$annotation), ]
 
-# 38 hypomethylated promoters
+# 89 hypomethylated promoters
 hypo_df <- as.data.frame(hypo_anno)
 hypo_promoter <- hypo_df[grep("Promoter", hypo_df$annotation), ]
 
@@ -185,7 +178,7 @@ run_go <- function(df, label) {
     if (nrow(cc) > 0) cc$Label <- "CC"
 
     res <- rbind(bp, mf, cc)
-    filename <- paste0("data/results/data/cholangio/baseline_sdpd_", label, "_GO.tsv")
+    filename <- paste0("data/results/data/cholangio/frombaseline_all_sdpd_", label, "_GO.tsv")
     write.table(res, file = filename, quote = F, sep = "\t", col.names = T, row.names = F)
     print(nrow(res))
     return(res)
@@ -193,11 +186,11 @@ run_go <- function(df, label) {
 
 # genes from all regions
 hyper_go_all <- run_go(hyper_df, "hyper_all") # 0 results
-hypo_go_all <- run_go(hypo_df, "hypo_all") # 1 result
+hypo_go_all <- run_go(hypo_df, "hypo_all") # 45 result
 
 # genes from promoter regions only
-hyper_go_promoter <- run_go(hyper_promoter, "hyper_promoter") # 99 results
-hypo_go_promoter <- run_go(hypo_promoter, "hypo_promoter") # 11 results
+hyper_go_promoter <- run_go(hyper_promoter, "hyper_promoter") # 27 results
+hypo_go_promoter <- run_go(hypo_promoter, "hypo_promoter") # 13 results
 
 ###########################################################
 # Plot GO analysis
@@ -209,10 +202,10 @@ plot_go <- function(go_res, label) {
     go_res$Description <- factor(go_res$Description, levels = go_res$Description)
 
     if (label == "hypo_promoter") {
-        w <- 6
+        w <- 4.5
         h <- 3.5
     } else {
-        w <- 6.5
+        w <- 4.5
         h <- 4
         go_res <- go_res[1:15,]
     }
@@ -223,7 +216,7 @@ plot_go <- function(go_res, label) {
     as.numeric(vals[1]) / as.numeric(vals[2])
     })
 
-    filename <- paste0("data/results/figures/cholangio/baseline_sdpd_", label, "_GO.png")
+    filename <- paste0("data/results/figures/cholangio/frombaseline_all_sdpd_", label, "_GO.png")
     png(filename, width = w, height = h, res = 600, units = "in")
     print(ggplot(go_res, aes(x = Label, y = Description, color = p.adjust, size = GeneRatio)) +
         geom_point() +
@@ -265,15 +258,15 @@ run_great <- function(gr, label) {
     res <- res[res$Hyper_Adjp_BH < 0.1,]
     res <- res[order(res$Hyper_Adjp_BH),]
 
-    filename <- paste0("data/results/data/cholangio/baseline_sdpd_", label, ".tsv")
+    filename <- paste0("data/results/data/cholangio/frombaseline_all_sdpd_", label, ".tsv")
     write.table(res, file = filename, quote = F, sep = "\t", col.names = T, row.names = F)
     print(nrow(res))
     return(res)
 }
 
-hyper_res <- run_great(hyper_gr, "hyper_GREAT") # 0
+hyper_res <- run_great(hyper_gr, "hyper_GREAT") # 12
 hyper_res_promoter <- run_great(hyper_gr_promoter, "hyper_promoter_GREAT") #0
-hypo_res <- run_great(hypo_gr, "hypo_GREAT") # 7 all
+hypo_res <- run_great(hypo_gr, "hypo_GREAT") # 206
 hypo_res_promoter <- run_great(hypo_gr_promoter, "hypo_promoter_GREAT") #0
 
 ###########################################################
@@ -281,10 +274,15 @@ hypo_res_promoter <- run_great(hypo_gr_promoter, "hypo_promoter_GREAT") #0
 ###########################################################
 
 # helper function to plot GREAT analysis results
-plot_GREAT <- function(great, label) {
+plot_GREAT <- function(great, label, w) {
 
     #great <- great[great$Hyper_Total_Genes > 10,]
     toPlot <- great[order(great$Hyper_Fold_Enrichment, decreasing = TRUE),]
+    if (label == "hypermethylation") {
+        toPlot <- toPlot[1:12,]
+    } else {
+        toPlot <- toPlot[1:15,]
+    }
     toPlot$name <- factor(toPlot$name, levels=rev(toPlot$name))
 
     p <- ggplot(toPlot, aes(x = name, y = Hyper_Fold_Enrichment, color = Hyper_Adjp_BH)) +
@@ -309,10 +307,11 @@ plot_GREAT <- function(great, label) {
         ) + 
         labs(x = "GO Term", y = "Fold Enrichment", size = "Genes", color = "Adjusted\nP-Value", title = label)
 
-    filename <- paste0("data/results/figures/cholangio/baseline_sdpd_", label, "_GREAT.png")
-    png(filename, width = 10, height = 4, res = 600, units = "in")
+    filename <- paste0("data/results/figures/cholangio/frombaseline_all_sdpd_", label, "_GREAT.png")
+    png(filename, width = w, height = 4, res = 600, units = "in")
     print(p)
     dev.off()
 }
 
-plot_GREAT(hypo_res, "hypomethylation")
+plot_GREAT(hyper_res, "hypermethylation", 6)
+plot_GREAT(hypo_res, "hypomethylation", 7)
