@@ -93,12 +93,13 @@ top_genes_by_FC <- function(genes, dmr_res, label, w) {
     count_df <- as.data.frame(table(all_genes))
     count_df <- count_df[order(count_df$Freq, decreasing = TRUE),]
     count_df <- count_df[count_df$all_genes != "NA",]
-    avgFC <- data.frame(Gene = unique(all_genes), avgFC = NA)
+    avgFC <- data.frame(Gene = unique(all_genes), avgFC=NA, adj.P.Val=NA)
     avgFC <- avgFC[complete.cases(avgFC$Gene),]
 
     for (gene in avgFC$Gene) {
         tt <- dmr_res[grep(gene, dmr_res$annot.symbol),]
         avgFC$avgFC[avgFC$Gene == gene] <- abs(mean(tt$logFC))
+        avgFC$adj.P.Val[avgFC$Gene == gene] <- abs(mean(tt$adj.P.Val))
     }
     avgFC <- avgFC[order(avgFC$avgFC, decreasing = TRUE),]
     avgFC$count <- count_df$Freq[match(avgFC$Gene, count_df$all_genes)]
@@ -106,18 +107,18 @@ top_genes_by_FC <- function(genes, dmr_res, label, w) {
     toPlot <- avgFC[1:20,]
     toPlot$Gene <- factor(toPlot$Gene, levels = rev(toPlot$Gene))
 
-    p <- ggplot(toPlot, aes(x = label, y = Gene, fill = avgFC)) +
-        geom_tile(color = "black") +
-        scale_fill_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
-        theme_minimal() +
+    p <- ggplot(toPlot, aes(x = label, y = Gene, color = avgFC, size = -log10(adj.P.Val))) +
+        geom_point() +
+        scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
+        theme_bw() +
         theme(axis.title.x = element_blank()) +
-        labs(y = "Top Genes from DMRs")
+        labs(y = "Genes from Top DMRs", color = "Fold\nChange", size = "-log(FDR)")
     filename <- paste0("data/results/figures/cholangio/top_genes/byFC_", label, ".png")
     ggsave(filename, p, width = w, height = 4.5)
 }
 
-top_genes_by_FC(hyper$annot.symbol, hyper, "Hyper", w=3)
-top_genes_by_FC(hypo$annot.symbol, hypo, "Hypo", w=2.5)
+top_genes_by_FC(hyper$annot.symbol, hyper, "Hyper", w=3.25)
+top_genes_by_FC(hypo$annot.symbol, hypo, "Hypo", w=2.75)
 
 ###########################################################
 # Create genomic ranges
