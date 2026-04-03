@@ -14,6 +14,7 @@ suppressPackageStartupMessages({
     library(rGREAT)
     library(clusterProfiler)
     library(org.Hs.eg.db)
+    library(ComplexHeatmap)
 })
 
 source("workflow/scripts/utils/palettes.R")
@@ -31,12 +32,6 @@ pheno <- fread("data/rawdata/cholangio/Pheno_cholangio_all_IDHwt_Vs_IDHmut.txt")
 common <- intersect(pheno$MeDIP_ID, colnames(mat))
 mat <- mat[,match(common, colnames(mat))]
 pheno <- pheno[match(common, pheno$MeDIP_ID),] #56 samples from 10 patients
-
-ids <- unique(pheno$solid_patient)
-for (id in ids) {
-    subset <- pheno$response[pheno$solid_patient == id]
-    cat(id, ":", unique(subset), "\n")
-}
 
 # load in annotation
 txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
@@ -88,6 +83,40 @@ ggplot() +
 
 hyper <- res[res$logFC > 0 & res$adj.P.Val < 0.05,] #383
 hypo <- res[res$logFC < 0 & res$adj.P.Val < 0.05,] #1087
+
+###########################################################
+# Quick heatmap
+###########################################################
+
+tt <- hypo[hypo$adj.P.Val < 0.05 & abs(hypo$logFC) > 2,]
+tt <- tt[order(tt$logFC),]
+
+pheno <- pheno[order(pheno$final_response, decreasing = TRUE),]
+toPlot <- mat[
+    match(c(rownames(tt)), rownames(mat)),
+    match(pheno$MeDIP_ID, colnames(mat))
+]
+labels <- pheno$final_response
+
+column_ha <- HeatmapAnnotation(Response = labels)
+
+Heatmap(
+    toPlot, name = "mat",
+    top_annotation = column_ha,
+    cluster_rows = FALSE, cluster_columns = FALSE,
+    show_row_names = FALSE,
+    show_column_names = FALSE
+)
+
+filename <- paste0("data/results/figures/cholangio/frombaseline_all_sd_vs_pd_heatmap.png")
+png(filename, width = 10, height = 6, res = 600, units = "in")
+Heatmap(toPlot, name = "mat", top_annotation = column_ha)
+dev.off()
+
+
+print(Heatmap(scores, cluster_rows = FALSE, name = "NRF2\nBinding\nScore", col = score_pal,
+    column_title = "Samples", column_title_side = "bottom", column_names_gp = gpar(fontsize = 9),
+    row_names_gp = gpar(fontsize = 10), top_annotation = ha))
 
 ###########################################################
 # Create genomic ranges
@@ -223,6 +252,10 @@ plot_go <- function(go_res, label) {
         scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
         theme_bw() +
         theme(axis.title.y = element_blank(), legend.key.size = unit(0.5, 'cm')) +
+        guides(
+            size = guide_legend(order = 1),
+            color = guide_colorbar(order = 2)
+        ) +
         labs(x = "Ontology"))
     dev.off()
 

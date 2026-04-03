@@ -112,6 +112,10 @@ top_genes_by_FC <- function(genes, dmr_res, label, w) {
         scale_color_viridis_c(option = "rocket", direction = -1, begin = 0.15, end = 0.85) +
         theme_bw() +
         theme(axis.title.x = element_blank()) +
+        guides(
+            size = guide_legend(order = 1),
+            color = guide_colorbar(order = 2)
+        ) +
         labs(y = "Genes from Top DMRs", color = "Fold\nChange", size = "-log(FDR)")
     filename <- paste0("data/results/figures/cholangio/top_genes/byFC_", label, ".png")
     ggsave(filename, p, width = w, height = 4.5)
