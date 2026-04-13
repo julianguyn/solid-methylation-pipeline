@@ -79,7 +79,7 @@ mat <- mat[,match(baseline$MeDIP_ID, colnames(mat))]
 labels <- factor(baseline$final_response)
 
 # model
-design <- model.matrix(~ labels) # 465 DMRs with FDR<0.05
+design <- model.matrix(~ labels) # 1132 DMRs with FDR<0.05
 fit <- lmFit(mat, design)
 fit <- eBayes(fit)
 res <- topTable(fit, coef = "labelsSD", number = Inf)
@@ -93,8 +93,8 @@ write.csv(res, file = "data/results/data/cholangio/baseline_sd_vs_pd.csv", quote
 #    geom_point(data = res[res$logFC < -2 & res$adj.P.Val < 0.05,], aes(x = logFC, y = -log10(adj.P.Val)), color = "blue") +
 #    theme_bw()
 
-hyper <- res[res$logFC > 2 & res$adj.P.Val < 0.05,] #54
-hypo <- res[res$logFC < -2 & res$adj.P.Val < 0.05,] #411
+hyper <- res[res$logFC > 2 & res$adj.P.Val < 0.05,] #330
+hypo <- res[res$logFC < -2 & res$adj.P.Val < 0.05,] #802
 
 ###########################################################
 # Create genomic ranges
@@ -138,11 +138,11 @@ dev.off()
 # Keep promoter regions
 ###########################################################
 
-# 11 hypermethylated promoters
+# 59 hypermethylated promoters
 hyper_df <- as.data.frame(hyper_anno)
 hyper_promoter <- hyper_df[grep("Promoter", hyper_df$annotation), ]
 
-# 38 hypomethylated promoters
+# 121 hypomethylated promoters
 hypo_df <- as.data.frame(hypo_anno)
 hypo_promoter <- hypo_df[grep("Promoter", hypo_df$annotation), ]
 
@@ -192,11 +192,11 @@ run_go <- function(df, label) {
 }
 
 # genes from all regions
-hyper_go_all <- run_go(hyper_df, "hyper_all") # 0 results
-hypo_go_all <- run_go(hypo_df, "hypo_all") # 1 result
+hyper_go_all <- run_go(hyper_df, "hyper_all") # havent ran
+hypo_go_all <- run_go(hypo_df, "hypo_all") # havent ran
 
 # genes from promoter regions only
-hyper_go_promoter <- run_go(hyper_promoter, "hyper_promoter") # 99 results
+hyper_go_promoter <- run_go(hyper_promoter, "hyper_promoter") # 7 results
 hypo_go_promoter <- run_go(hypo_promoter, "hypo_promoter") # 11 results
 
 ###########################################################
@@ -212,9 +212,8 @@ plot_go <- function(go_res, label) {
         w <- 6
         h <- 3.5
     } else {
-        w <- 6.5
+        w <- 4
         h <- 4
-        go_res <- go_res[1:15,]
     }
 
     # add gene ratio

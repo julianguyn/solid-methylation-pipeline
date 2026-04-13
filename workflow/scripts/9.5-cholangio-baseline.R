@@ -181,7 +181,7 @@ hypo_go_all <- run_go(hypo_df, bg_gr, "hypo_all") # 6 result
 
 # genes from promoter regions only
 hyper_go_promoter <- run_go(hyper_promoter, bg_gr_promoter, "hyper_promoter") # 8 results
-hypo_go_promoter <- run_go(hypo_promoter, bg_gr_promoter, "hypo_promoter") # 6 results
+hypo_go_promoter <- run_go(hypo_promoter, bg_gr_promoter, "hypo_promoter") # 0 results
 
 ###########################################################
 # Plot GO analysis
