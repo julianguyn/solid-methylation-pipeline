@@ -18,13 +18,17 @@ pheno <- pheno[-which(pheno$MeDIP_ID %in% common),]
 
 # get glioma samples
 load("data/procdata/RGSets_targets.RData")
+targets$mapping <- gsub("_0", "_", gsub("_0", "_", paste0("Solid_", sub(".*-", "", targets$Subject))))
 
-need <- targets$Subject
-need <- paste0("Solid_", sub(".*-", "", need))
-need <- gsub("_0", "_", gsub("_0", "_", need))
+# subset for solid matched samples
+medip <- medip[,grep("Solid", colnames(medip))]
+# keep first sample (baseline)
+medip <- medip[, grepl("-1$", colnames(medip))]
+
+
 
 have <- paste0("Solid_", sub("batch.*_", "", colnames(medip)))
-have <- sub("-.*", "", have)
+have <- sub("-.*", "", paste0("Solid_", sub("batch.*_", "", colnames(medip))))
 have <- have[order(have)]
 
 # gliomas with medip

@@ -1,0 +1,130 @@
+---
+title: "Mapping MeDIP counts matrix to Glioma SOLID patients"
+author: ""
+date: "April 14th, 2026"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Set up
+```{r}
+library(data.table) |> suppressMessages()
+dir <- "/Users/julianguyen/Documents/SOLID-methylation/"
+```
+
+## Load in data
+
+### MeDIP log2CPM matrix
+```{r}
+medip <- readRDS(paste0(dir, "data/rawdata/MeDIP_Solid_all_log2CPM.rds"))
+print(dim(medip))
+```
+
+```{r}
+medip[1:5,1:5]
+```
+
+
+```{r}
+available_medip <- colnames(medip)
+available_medip
+```
+These are the column names of the MeDIP counts matrix for all SOLID patients. There were 174 samples.
+
+
+### Cholangio MeDIP log2CPM matrix
+```{r}
+cmat <- readRDS(paste0(dir, "data/rawdata/cholangio/MeDIP_Solid_cholangiocarcinoma_log2CPM.rds"))
+print(dim(cmat))
+```
+
+```{r}
+cholangio_medip <- colnames(cmat)
+cholangio_medip
+```
+
+These should be all the cholangio patients. There are 56 samples total. This leaves 118 (174-56) MeDIP samples from the earlier matrix to be from the glioma patients.
+
+### Identify Glioma MeDIP IDs
+
+Removing the cholangio MeDIP sample IDs, these are what we are left with for glioma patients.
+
+```{r}
+glioma_medip <- available_medip[-which(available_medip %in% cholangio_medip)]
+glioma_medip
+```
+
+## Subet for matched glioma SOLID IDs
+
+Here are some metadata files I have available.
+
+**Cholangio pheno**
+
+```{r}
+pheno <- fread(paste0(dir, "data/rawdata/cholangio/Pheno_cholangio_all_IDHwt_Vs_IDHmut.txt"))
+dim(pheno) # 64 samples here
+```
+
+```{r}
+head(pheno)
+```
+
+The MeDIP_ID column matches the column names, but only the cholangio matrices. I don't have an equivalent metadata file for the glioma samples.
+
+```{r}
+table(pheno$MeDIP_ID %in% available_medip)
+```
+
+```{r}
+table(pheno$MeDIP_ID %in% glioma_medip)
+```
+
+**Glioma pheno**
+
+Below is the metadata file from the tissue methylation which has the SOLID ids of the 29 glioma solid patients with methylation. I created a new column `mapping` which can be used to map to the MeDIP IDs.
+
+```{r}
+load(paste0(dir, "data/procdata/RGSets_targets.RData")) |> suppressMessages()
+targets$mapping <- gsub("_0", "_", gsub("_0", "_", paste0("Solid_", sub(".*-", "", targets$Subject))))
+head(targets)
+```
+
+### Method 1: subset for sampleIDs with 'SOLID' explicitly in sampleID
+
+```{r}
+glioma_with_solid <- glioma_medip[grep("Solid", glioma_medip)]
+glioma_with_solid
+```
+
+```{r}
+# keep only samples with '-1' (to filter for unique and presumably baseline samples)
+glioma_with_solid[grepl("-1$", glioma_with_solid)]
+```
+
+Clean list of 10 available samples:
+
+```{r}
+clean_names <- sub("-.*", "", sub("batch6_", "", glioma_with_solid[grepl("-1$", glioma_with_solid)]))
+print(clean_names)
+print(clean_names %in% targets$mapping) # these are all in the list of glioma SOLID patients with methylation
+```
+
+
+### Method 2: assuming number following batch corresponds to SOLID patient ID (not sure if this is true)
+
+```{r}
+glioma_medip_rename <- sub("-.*", "", paste0("Solid_", sub("batch.*_", "", glioma_medip))) |> unique()
+glioma_medip_rename
+```
+
+```{r}
+table(glioma_medip_rename %in% targets$mapping) 
+# 13 of these renamed sampleIDs are in the list of glioma SOLID patients with methylation
+```
+
+```{r}
+glioma_medip_rename[glioma_medip_rename %in% targets$mapping]
+```
+
+
